@@ -1,4 +1,5 @@
 # ssm-im
+small experiments with AR image modeling with Mamba.
 
 ## setup
 install with `poetry lock && poetry install` or use conda and install things by hand.
