@@ -36,7 +36,7 @@ def loop(dataloader, optimizer, model, split):
             wandb.log({
                 "loss": loss,
             })
-        total_loss += loss
+        total_loss += loss.detach()
         n += 1
     return total_loss / n
 
@@ -77,12 +77,14 @@ def main(
 
     for epoch in range(num_epochs):
         train_loss = loop(train_loader, optimizer, model, Split.TRAIN)
-        valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
+        with torch.no_grad():
+            valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
         wandb.log({
             "train-loss": train_loss,
             "valid-loss": valid_loss,
         })
-    test_loss = loop(test_loader, optimizer, model, Split.TEST)
+    with torch.no_grad():
+        test_loss = loop(test_loader, optimizer, model, Split.TEST)
     wandb.log({"test-loss": test_loss})
 
 
