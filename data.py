@@ -26,26 +26,7 @@ def split_train_val(train, val_split):
     return train, val
 
 
-def load_cifar(grayscale=False):
-    if grayscale:
-        transform = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Grayscale(),
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=122.6 / 255.0, std=61.0 / 255.0),
-                torchvision.transforms.Lambda(lambda x: x.view(1, 1024).t()),
-            ]
-        )
-    else:
-        transform = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(
-                    (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-                ),
-                torchvision.transforms.Lambda(lambda x: x.view(3, 1024).t()),
-            ]
-        )
+def load_cifar():
     transform = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),

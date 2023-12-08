@@ -51,7 +51,6 @@ def main(
 ):
     # constants
     torch.manual_seed(1234)
-    greyscale = False
     vocab_size = 256 + 1
 
     config = {
@@ -68,7 +67,7 @@ def main(
         config = config,
     )
 
-    data = load_cifar(greyscale)
+    data = load_cifar()
 
     train_loader, valid_loader, test_loader = dataloaders(data, batch_size, num_workers)
     model = MambaLMHeadModel(d_model, n_layer, vocab_size).cuda()
