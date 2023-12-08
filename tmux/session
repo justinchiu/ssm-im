@@ -1,0 +1,14 @@
+new-window -n "root"
+send-keys "conda activate mamba" Enter
+split-window -h -p 50
+send-keys "conda activate mamba" Enter
+
+new-window -n "ssm"
+send-keys "cd ssm" Enter
+split-window -h -p 50
+send-keys "cd ssm" Enter
+
+new-window -n "data"
+send-keys "cd data" Enter
+split-window -h -p 50
+send-keys "cd data" Enter
