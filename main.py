@@ -51,7 +51,7 @@ def main(
 ):
     # constants
     torch.manual_seed(1234)
-    greyscale = False,
+    greyscale = False
     vocab_size = 256 + 1
 
     config = {
