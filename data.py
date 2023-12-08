@@ -52,7 +52,7 @@ def load_cifar():
         root="./data/cifar/", train=False, download=True, transform=transform_test
     )
 
-    d_input = 3 if not grayscale else 1
+    d_input = 3
     d_output = 10
 
     return Data(
