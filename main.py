@@ -41,29 +41,32 @@ def loop(dataloader, optimizer, model, split):
     return total_loss / n
 
 
-def main():
+def main(
+    batch_size: int = 128,
+    num_workers: int = 4,
+    d_model: int = 256,
+    n_layer: int = 4,
+    lr: float = 1e-3,
+    num_epochs: int = 5,
+):
+    # constants
     torch.manual_seed(1234)
-    batch_size = 128
-    num_workers = 4
-    greyscale = False
-    d_model = 256
-    n_layer = 4
+    greyscale = False,
     vocab_size = 256 + 1
-    lr = 1e-3
-    num_epochs = 5
 
-    wandb.init(
-        project = "ssm-cifar-tokenized",
-        notes = "testing out ssms on tokenized cifar",
-        tags = ["ssm", "cifar"],
-    )
-    wandb.config = {
+    config = {
         "d_model": d_model,
         "n_layer": n_layer,
         "batchsize": batch_size,
         "lr": lr,
         "num_epochs": num_epochs,
     }
+    wandb.init(
+        project = "ssm-cifar-tokenized",
+        notes = "testing out ssms on tokenized cifar",
+        tags = ["ssm", "cifar"],
+        config = config,
+    )
 
     data = load_cifar(greyscale)
 
