@@ -7,10 +7,11 @@ import torch
 from torchvision.transforms import ToTensor
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import argparse
+import wandb
 
 import pdb
 from data import load_cifar, dataloaders
-import wandb
+import sample
 
 
 def evaluate(dataloader, model):
@@ -31,7 +32,8 @@ def evaluate(dataloader, model):
         total_loss += loss.detach()
 
     # TODO evaluate generated images
-    return total_loss / n
+    samples = sample.sample_wandb_grid(model, num_samples)
+    return total_loss / n, samples
 
 
 def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1):
@@ -133,15 +135,17 @@ def main(args):
         # validate
         model.eval()
         with torch.no_grad():
-            valid_loss = evaluate(
+            valid_loss, valid_samples = evaluate(
                 valid_loader,
                 model,
+                num_samples=16,
             )
         wandb.log(
             {
                 "train_step": total_step,
                 "val/loss": valid_loss,
                 "val/bpd": valid_loss / math.log2(math.exp(1)),
+                "samples": valid_samples,
             }
         )
 
@@ -150,6 +154,7 @@ def main(args):
             best_valid_loss = valid_loss
             # Save checkpoint
             checkpoint = {
+                "args": args,
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
@@ -165,12 +170,13 @@ def main(args):
     # test
     model.eval()
     with torch.no_grad():
-        test_loss = evaluate(test_loader, model)
+        test_loss, test_samples = evaluate(test_loader, model, num_samples=16)
     wandb.log(
         {
             "train_step": total_step,
             "test/loss": test_loss,
             "test/bpd": test_loss / math.log2(math.exp(1)),
+            "samples": test_samples,
         }
     )
 
