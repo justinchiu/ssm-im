@@ -16,16 +16,16 @@ class Split(Enum):
     TEST = auto()
 
 
-def loop(dataloader, optimizer, model, split, grad_accumulation_steps):
+def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
     total_loss = 0
     n = 0
+    batch_n = 0
     optimizer.zero_grad()
     for step, images in enumerate(tqdm.tqdm(dataloader)):
         x = images.cuda()
         output = model(x[:,:-1])
         logprobs = output.logits.log_softmax(-1)
         batch_size, length = logprobs.shape
-        num_tokens = batch_size * length
         loglik = logprobs[
             torch.arange(batch_size)[:,None,None],
             torch.arange(length)[:,None],
@@ -33,16 +33,26 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps):
         ]
         loss = -loglik.sum()
 
-        if split == Split.TRAIN: 
-            (loss / num_tokens / grad_accumulation_steps).backward()
+        # loss accounting
+        num_tokens = batch_size * length
+        batch_n += num_tokens
+        n += num_tokens
+        total_loss += loss.detach()
+
+        # update weights
+        if split == Split.TRAIN:
+            # average over total number of pixels*channels in batch
+            (loss / batch_n).backward()
             if (step + 1) % grad_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
+                batch_n = 0
 
-            wandb.log({"loss": loss})
+            wandb.log({
+                "train NLL loss": loss,
+                "train bpd": loss / math.log2(math.exp(1))
+            })
         
-        total_loss += loss.detach()
-        n += num_tokens
 
     if split == Split.TRAIN and grad_accumulation_steps > 1:
         optimizer.step()  # Ensure any remaining gradients are applied
@@ -54,66 +64,48 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps):
 
 def main():
     # constants
-    parser = argparse.ArgumentParser(description="Train a model on CIFAR with SSM")
-    parser.add_argument('--batch-size', type=int, default=128, help='Batch size for training (default: 128)')
-    parser.add_argument('--num-workers', type=int, default=4, help='Number of workers for data loading (default: 4)')
-    parser.add_argument('--d-model', type=int, default=256, help='Dimension of model (default: 256)')
-    parser.add_argument('--n-layer', type=int, default=4, help='Number of layers (default: 4)')
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate (default: 1e-3)')
-    parser.add_argument('--num-epochs', type=int, default=5, help='Number of epochs (default: 5)')
-    parser.add_argument('--grad-accumulation-steps', type=int, default=1, help='Gradient accumulation steps (default: 1)')
-    parser.add_argument('--save-model-steps', type=int, default=100, help='Save model every n steps (default: 100)')
-    parser.add_argument('--seed', type=int, default=100, help='Save model every n steps (default: 100)')
-
-    args = parser.parse_args()
-
-    # Use args with underscores when accessing the arguments
-    batch_size = args.batch_size
-    num_workers = args.num_workers
-    d_model = args.d_model
-    n_layer = args.n_layer
-    lr = args.lr
-    num_epochs = args.num_epochs
-    grad_accumulation_steps = args.grad_accumulation_steps
-    save_model_steps = args.save_model_steps
-    see = args.seed
-
-    torch.manual_seed(seed)
+    torch.manual_seed(args.seed)
     vocab_size = 256 + 1
 
-    config = {
-        "d_model": d_model,
-        "n_layer": n_layer,
-        "batchsize": batch_size,
-        "lr": lr,
-        "num_epochs": num_epochs,
-    }
     wandb.init(
         project = "ssm-cifar-tokenized",
         notes = "testing out ssms on tokenized cifar",
         tags = ["ssm", "cifar"],
-        config = config,
+        config = args,
     )
 
     data = load_cifar()
 
-    train_loader, valid_loader, test_loader = dataloaders(data, batch_size, num_workers)
-    model = MambaLMHeadModel(d_model, n_layer, vocab_size).cuda()
+    train_loader, valid_loader, test_loader = dataloaders(data, args.batch_size, args.num_workers)
+    model = MambaLMHeadModel(args.d_model, args.n_layer, vocab_size).cuda()
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     # model training
-    for epoch in range(num_epochs):
-        train_loss = loop(train_loader, optimizer, model, Split.TRAIN, grad_accumulation_steps=4) # Example accumulation step
+    for epoch in range(args.num_epochs):
+        train_loss = loop(
+            train_loader,
+            optimizer,
+            model,
+            Split.TRAIN,
+            grad_accumulation_steps=args.grad_accumulation_steps,
+        )
         with torch.no_grad():
-            valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
+            valid_loss = loop(
+                valid_loader,
+                optimizer,
+                model,
+                Split.VALID
+            )
         
         wandb.log({
             "train-loss": train_loss,
             "valid-loss": valid_loss,
+            "train-bpd": train_loss / math.log2(math.exp(1)),
+            "valid-bpd": valid_loss / math.log2(math.exp(1)),
         })
 
-        if total_steps % save_model_steps == 0:
+        if total_steps % args.save_model_steps == 0:
             # Save checkpoint
             checkpoint = {
                 'epoch': epoch,
@@ -127,9 +119,25 @@ def main():
     # model test
     with torch.no_grad():
         test_loss = loop(test_loader, optimizer, model, Split.TEST)
-    wandb.log({"test-loss": test_loss})
+    wandb.log({
+        "test-loss": test_loss,
+        "test-bpd": test_loss / math.log2(math.exp(1)),
+    })
 
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    parser = argparse.ArgumentParser(description="Train a model on CIFAR with SSM")
+    parser.add_argument('--batch-size', type=int, default=128, help='Batch size for training (default: 128)')
+    parser.add_argument('--num-workers', type=int, default=4, help='Number of workers for data loading (default: 4)')
+    parser.add_argument('--d-model', type=int, default=256, help='Dimension of model (default: 256)')
+    parser.add_argument('--n-layer', type=int, default=8, help='Number of layers (default: 4)')
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate (default: 1e-3)')
+    parser.add_argument('--num-epochs', type=int, default=50, help='Number of epochs (default: 5)')
+    parser.add_argument('--grad-accumulation-steps', type=int, default=1, help='Gradient accumulation steps (default: 1)')
+    parser.add_argument('--save-model-steps', type=int, default=100, help='Save model every n steps (default: 100)')
+    parser.add_argument('--seed', type=int, default=1234, help='Save model every n steps (default: 100)')
+
+    args = parser.parse_args()
+
+    main(args)
