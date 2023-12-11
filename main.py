@@ -13,20 +13,39 @@ from data import load_cifar, dataloaders
 import wandb
 
 
-class Split(Enum):
-    TRAIN = auto()
-    VALID = auto()
-    TEST = auto()
+def evaluate(dataloader, model):
+    total_loss = 0
+    n = 0
+
+    for step, images in enumerate(tqdm.tqdm(dataloader)):
+        x = images.cuda()
+        output = model(x[:, :-1])
+        logprobs = output.logits.log_softmax(-1)
+        batch_size, length, vocab = logprobs.shape
+        loglik = logprobs[
+            torch.arange(batch_size)[:, None, None],
+            torch.arange(length)[:, None],
+            x[:, 1:, None],
+        ]
+        loss = -loglik.sum()
+
+        # loss accounting
+        num_tokens = batch_size * length
+        n += num_tokens
+        total_loss += loss.detach()
+
+    # TODO evaluate generated images
+    return total_loss / n
 
 
-def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
+def train(dataloader, optimizer, model, grad_accumulation_steps=1):
     total_loss = 0
     n = 0
     batch_loss = 0
     batch_n = 0
     steps = 0
     optimizer.zero_grad()
-    for step, images in enumerate(tqdm.tqdm(dataloader)):
+    for images in tqdm.tqdm(dataloader):
         x = images.cuda()
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
@@ -46,19 +65,23 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
         total_loss += loss.detach()
 
         # update weights
-        if split == Split.TRAIN:
-            # average over total number of pixels*channels in batch
-            (loss / num_tokens).backward()
-            if (step + 1) % grad_accumulation_steps == 0:
-                wandb.log(
-                    {"train NLL loss": batch_loss / batch_n, "train bpd": batch_loss / batch_n / math.log2(math.exp(1))}
-                )
-                optimizer.step()
-                optimizer.zero_grad()
-                batch_n = 0
-                batch_loss = 0
+        # average over total number of pixels*channels in batch
+        (loss / num_tokens).backward()
+        if (steps + 1) % grad_accumulation_steps == 0:
+            wandb.log(
+                {
+                    "train_step": steps + 1,
+                    "train/batch-loss": batch_loss / batch_n,
+                    "train/batch-bpd": batch_loss / batch_n / math.log2(math.exp(1)),
+                }
+            )
+            optimizer.step()
+            optimizer.zero_grad()
+            batch_n = 0
+            batch_loss = 0
+            steps += 1
 
-    if split == Split.TRAIN and grad_accumulation_steps > 1:
+    if (grad_accumulation_steps > 1) and (steps % grad_accumulation_steps != 0):
         optimizer.step()  # Ensure any remaining gradients are applied
         optimizer.zero_grad()
         steps += 1
@@ -79,6 +102,12 @@ def main(args):
         config=args,
     )
 
+    # wandb can log only per step by default, define custom step
+    wandb.define_metric("train_step")
+    wandb.define_metric("train/*", step_metric="train_step")
+    wandb.define_metric("val/*", step_metric="train_step")
+    wandb.define_metric("test/*", step_metric="train_step")
+
     data = load_cifar()
 
     train_loader, valid_loader, test_loader = dataloaders(
@@ -87,56 +116,73 @@ def main(args):
     model = MambaLMHeadModel(args.d_model, args.n_layer, vocab_size).cuda()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    
-    total_steps = 0
 
-    # model training
+    total_steps = 0
     best_valid_loss = 1e10
+
     for epoch in range(args.num_epochs):
-        train_loss, train_steps = loop(
-            train_loader,
-            optimizer,
-            model,
-            Split.TRAIN,
+        print(f"Epoch {epoch}")
+        # train
+        model.train()
+        train_loss, train_steps = train(
+            dataloader=train_loader,
+            optimizer=optimizer,
+            model=model,
             grad_accumulation_steps=args.grad_accumulation_steps,
         )
         total_steps += train_steps
+        wandb.log(
+            {
+                "epoch": epoch,
+                "train_step": total_steps,
+                "train/loss": train_loss,
+                "train/bpd": train_loss / math.log2(math.exp(1)),
+            }
+        )
+
+        # validate
+        model.eval()
         with torch.no_grad():
-            valid_loss, _ = loop(
+            valid_loss = evaluate(
                 valid_loader,
-                optimizer,
                 model,
-                Split.VALID
             )
-        
-        wandb.log({
-            "train-loss": train_loss,
-            "valid-loss": valid_loss,
-            "train-bpd": train_loss / math.log2(math.exp(1)),
-            "valid-bpd": valid_loss / math.log2(math.exp(1)),
-        })
+        wandb.log(
+            {
+                "epoch": epoch,
+                "train_step": total_steps,
+                "val/loss": valid_loss,
+                "val/bpd": valid_loss / math.log2(math.exp(1)),
+            }
+        )
 
         if valid_loss < best_valid_loss:
+            print(f"New best valid loss: {valid_loss}, saving model")
             best_valid_loss = valid_loss
             # Save checkpoint
             checkpoint = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "train-loss": train_loss,
-                "valid-loss": valid_loss,
+                "train_loss": train_loss,
+                "valid_loss": valid_loss,
             }
-            model_name = "".join(f"{k[:2]}{v}" for k,v in vars(args).items())
+            model_name = "".join(f"{k[:2]}{v}" for k, v in vars(args).items())
             os.makedirs(f"checkpoints/{model_name}", exist_ok=True)
-            torch.save(checkpoint, f"checkpoints/{model_name}/checkpoint_epoch_{epoch}.pth")
+            torch.save(
+                checkpoint, f"checkpoints/{model_name}/checkpoint_epoch_{epoch}.pth"
+            )
 
-    # model test
+    # test
+    model.eval()
     with torch.no_grad():
-        test_loss = loop(test_loader, optimizer, model, Split.TEST)
+        test_loss = evaluate(test_loader, model)
     wandb.log(
         {
-            "test-loss": test_loss,
-            "test-bpd": test_loss / math.log2(math.exp(1)),
+            "epoch": epoch,
+            "train_step": total_steps,
+            "test/loss": test_loss,
+            "test/bpd": test_loss / math.log2(math.exp(1)),
         }
     )
 
@@ -180,7 +226,10 @@ if __name__ == "__main__":
         help="Save model every n steps (default: 500)",
     )
     parser.add_argument(
-        "--seed", type=int, default=1234, help="Save model every n steps (default: 1234)"
+        "--seed",
+        type=int,
+        default=1234,
+        help="Save model every n steps (default: 1234)",
     )
 
     args = parser.parse_args()
