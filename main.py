@@ -57,6 +57,8 @@ def main(
 ):
     # constants
     torch.manual_seed(1234)
+    # vocab is 0-255 pixel ints + START token
+    # START is added in data.py:dataloaders()
     vocab_size = 256 + 1
 
     config = {
