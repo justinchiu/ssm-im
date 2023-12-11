@@ -14,7 +14,7 @@ from data import load_cifar, dataloaders
 import sample
 
 
-def evaluate(dataloader, model):
+def evaluate(dataloader, model, num_samples):
     total_loss = 0
     n = 0
 
@@ -138,7 +138,7 @@ def main(args):
             valid_loss, valid_samples = evaluate(
                 valid_loader,
                 model,
-                num_samples=16,
+                num_samples=args.num_samples,
             )
         wandb.log(
             {
@@ -170,7 +170,7 @@ def main(args):
     # test
     model.eval()
     with torch.no_grad():
-        test_loss, test_samples = evaluate(test_loader, model, num_samples=16)
+        test_loss, test_samples = evaluate(test_loader, model, num_samples=args.num_samples)
     wandb.log(
         {
             "train_step": total_step,
@@ -206,6 +206,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num-epochs", type=int, default=50, help="Number of epochs (default: 50)"
+    )
+    parser.add_argument(
+        "--num-samples", type=int, default=16, help="Number of samples at eval (default: 16)"
     )
     parser.add_argument(
         "--grad-accumulation-steps",
