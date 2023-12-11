@@ -62,7 +62,7 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
 
 
 
-def main():
+def main(args):
     # constants
     torch.manual_seed(args.seed)
     vocab_size = 256 + 1
