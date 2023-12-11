@@ -22,11 +22,7 @@ def evaluate(dataloader, model):
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
         batch_size, length, vocab = logprobs.shape
-        loglik = logprobs[
-            torch.arange(batch_size)[:, None, None],
-            torch.arange(length)[:, None],
-            x[:, 1:, None],
-        ]
+        loglik = logprobs.gather(-1, x[:,1:,None])
         loss = -loglik.sum()
 
         # loss accounting
@@ -50,11 +46,7 @@ def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1):
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
         batch_size, length, vocab = logprobs.shape
-        loglik = logprobs[
-            torch.arange(batch_size)[:, None, None],
-            torch.arange(length)[:, None],
-            x[:, 1:, None],
-        ]
+        loglik = logprobs.gather(-1, x[:, 1:, None])
         loss = -loglik.sum()
 
         # loss accounting
