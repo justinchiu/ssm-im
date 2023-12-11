@@ -22,6 +22,7 @@ class Split(Enum):
 def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
     total_loss = 0
     n = 0
+    batch_loss = 0
     batch_n = 0
     steps = 0
     optimizer.zero_grad()
@@ -40,6 +41,7 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
         # loss accounting
         num_tokens = batch_size * length
         batch_n += num_tokens
+        batch_loss += loss.detach()
         n += num_tokens
         total_loss += loss.detach()
 
@@ -49,11 +51,12 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
             (loss / num_tokens).backward()
             if (step + 1) % grad_accumulation_steps == 0:
                 wandb.log(
-                    {"train NLL loss": loss / batch_n, "train bpd": loss / batch_n / math.log2(math.exp(1))}
+                    {"train NLL loss": batch_loss / batch_n, "train bpd": batch_loss / batch_n / math.log2(math.exp(1))}
                 )
                 optimizer.step()
                 optimizer.zero_grad()
                 batch_n = 0
+                batch_loss = 0
 
     if split == Split.TRAIN and grad_accumulation_steps > 1:
         optimizer.step()  # Ensure any remaining gradients are applied
