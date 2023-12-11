@@ -25,19 +25,23 @@ def loop(dataloader, optimizer, model, split):
         batch_size, length = x.shape
 
         output = model(x[:,:-1])
-        loss = -output.logits.log_softmax(-1)[
+        logprobs = output.logits.log_softmax(-1)
+        loglik = logprobs[
             torch.arange(batch_size)[:,None,None],
             torch.arange(length-1)[:,None],
             x[:,1:,None],
-        ].mean()
+        ]
+        # ^ equivalent to
+        #loglik1 = logprobs.gather(-1, x[:,1:,None])
+        loss = -loglik.sum()
         if split == Split.TRAIN: 
-            loss.backward()
+            (loss / batch_size * length).backward()
             optimizer.step()
             wandb.log({
                 "loss": loss,
             })
         total_loss += loss.detach()
-        n += 1
+        n += batch_size * length
     return total_loss / n
 
 
