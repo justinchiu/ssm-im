@@ -6,14 +6,21 @@ import einops
 import torchvision
 import wandb
 
+
 @torch.inference_mode()
 def naive_sample(model, num_samples):
     x = torch.full((num_samples, 1), 256, dtype=torch.long, device="cuda:0")
-    output = decode(x, model, 32*32*3+1, top_k=0)
-    return einops.rearrange(
-        output.sequences[:,1:],
-        "b (h w c) -> b c h w", h = 32, w = 32, c = 3,
-    ).float() / 255
+    output = decode(x, model, 32 * 32 * 3 + 1, top_k=0)
+    return (
+        einops.rearrange(
+            output.sequences[:, 1:],
+            "b (h w c) -> b c h w",
+            h=32,
+            w=32,
+            c=3,
+        ).float()
+        / 255
+    )
 
 
 def sample_wandb_grid(model, num_samples):
@@ -40,9 +47,9 @@ if __name__ == "__main__":
     print("Took", time.time() - start, "secs")
 
     wandb.init(
-        project = "ssm-image-generation-test",
-        notes = "testing mamba image generation",
-        tags = ["ssm", "cifar"],
+        project="ssm-image-generation-test",
+        notes="testing mamba image generation",
+        tags=["ssm", "cifar"],
     )
 
     wandb.log({"samples": samples})

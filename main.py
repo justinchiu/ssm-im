@@ -5,6 +5,7 @@ import torch
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import argparse
 import wandb
+import transformers
 
 from data import load_cifar, dataloaders
 import sample
@@ -19,7 +20,7 @@ def evaluate(dataloader, model, num_samples):
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
         batch_size, length, vocab = logprobs.shape
-        loglik = logprobs.gather(-1, x[:,1:,None])
+        loglik = logprobs.gather(-1, x[:, 1:, None])
         loss = -loglik.sum()
 
         # loss accounting
@@ -32,7 +33,15 @@ def evaluate(dataloader, model, num_samples):
     return total_loss / n, samples
 
 
-def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1, train_steps=-1):
+def train(
+    dataloader,
+    optimizer,
+    scheduler,
+    model,
+    start_step,
+    grad_accumulation_steps=1,
+    train_steps=-1,
+):
     total_loss = 0
     total_step = 0
     n = 0
@@ -64,10 +73,11 @@ def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1, t
                 {
                     "train_step": start_step + total_step,
                     "train/batch-loss": batch_loss / batch_n,
-                    "train/batch-bpd": batch_loss / batch_n / math.log2(math.exp(1)),
+                    "train/batch-bpd": batch_loss / batch_n / math.log(2),
                 }
             )
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
             batch_n = 0
             batch_loss = 0
@@ -75,6 +85,7 @@ def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1, t
 
     if (grad_accumulation_steps > 1) and (step % grad_accumulation_steps != 0):
         optimizer.step()  # Ensure any remaining gradients are applied
+        scheduler.step()
         optimizer.zero_grad()
         total_step += 1
 
@@ -104,7 +115,21 @@ def main(args):
     )
     model = MambaLMHeadModel(args.d_model, args.n_layer, vocab_size).cuda()
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    # optimizer hyperparams from
+    # https://github.com/state-spaces/s4/blob/main/configs/experiment/cifar/s4-cifar.yaml
+    # https://github.com/state-spaces/s4/blob/main/configs/optimizer/adamw.yaml
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=0.05,
+    )
+    scheduler = transformers.get_cosine_schedule_with_warmup(
+        optimizer,
+        # len(training_loader)
+        num_warmup_steps=len(train_loader),
+        # len(training_loader) * args.num_epochs
+        num_training_steps=len(train_loader)*args.num_epochs,
+    )
 
     total_step = 0
     best_valid_loss = 1e10
@@ -116,6 +141,7 @@ def main(args):
         train_loss, train_steps = train(
             dataloader=train_loader,
             optimizer=optimizer,
+            scheduler=scheduler,
             model=model,
             start_step=total_step,
             grad_accumulation_steps=args.grad_accumulation_steps,
@@ -127,7 +153,7 @@ def main(args):
                 "epoch": epoch,
                 "train_step": total_step,
                 "train/loss": train_loss,
-                "train/bpd": train_loss / math.log2(math.exp(1)),
+                "train/bpd": train_loss / math.log(2),
             }
         )
 
@@ -143,7 +169,7 @@ def main(args):
             {
                 "train_step": total_step,
                 "val/loss": valid_loss,
-                "val/bpd": valid_loss / math.log2(math.exp(1)),
+                "val/bpd": valid_loss / math.log(2),
                 "samples": valid_samples,
             }
         )
@@ -169,7 +195,9 @@ def main(args):
     # test
     model.eval()
     with torch.no_grad():
-        test_loss, test_samples = evaluate(test_loader, model, num_samples=args.num_samples)
+        test_loss, test_samples = evaluate(
+            test_loader, model, num_samples=args.num_samples
+        )
     wandb.log(
         {
             "train_step": total_step,
@@ -185,8 +213,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
-        help="Batch size for training (default: 64)",
+        default=50,
+        help="Batch size for training (default: 50)",
     )
     parser.add_argument(
         "--num-workers",
@@ -195,19 +223,22 @@ if __name__ == "__main__":
         help="Number of workers for data loading (default: 4)",
     )
     parser.add_argument(
-        "--d-model", type=int, default=256, help="Dimension of model (default: 256)"
+        "--d-model", type=int, default=512, help="Dimension of model (default: 512)"
     )
     parser.add_argument(
-        "--n-layer", type=int, default=8, help="Number of layers (default: 8)"
+        "--n-layer", type=int, default=6, help="Number of layers (default: 6)"
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)"
+        "--lr", type=float, default=1e-2, help="Learning rate (default: 1e-2)"
     )
     parser.add_argument(
-        "--num-epochs", type=int, default=50, help="Number of epochs (default: 50)"
+        "--num-epochs", type=int, default=200, help="Number of epochs (default: 200)"
     )
     parser.add_argument(
-        "--num-samples", type=int, default=16, help="Number of samples at eval (default: 16)"
+        "--num-samples",
+        type=int,
+        default=16,
+        help="Number of samples at eval (default: 16)",
     )
     parser.add_argument(
         "--train-steps",
@@ -218,7 +249,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grad-accumulation-steps",
         type=int,
-        default=2,
+        default=1,
         help="Gradient accumulation steps (default: 2)",
     )
     parser.add_argument(
