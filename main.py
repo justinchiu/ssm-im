@@ -1,4 +1,5 @@
 import tyro
+import math
 from enum import Enum, auto
 import tqdm
 import torch
@@ -20,12 +21,13 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
     total_loss = 0
     n = 0
     batch_n = 0
+    steps = 0
     optimizer.zero_grad()
     for step, images in enumerate(tqdm.tqdm(dataloader)):
         x = images.cuda()
         output = model(x[:,:-1])
         logprobs = output.logits.log_softmax(-1)
-        batch_size, length = logprobs.shape
+        batch_size, length, _ = logprobs.shape
         loglik = logprobs[
             torch.arange(batch_size)[:,None,None],
             torch.arange(length)[:,None],
@@ -47,6 +49,7 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
                 optimizer.step()
                 optimizer.zero_grad()
                 batch_n = 0
+                steps += 1
 
             wandb.log({
                 "train NLL loss": loss,
@@ -57,12 +60,13 @@ def loop(dataloader, optimizer, model, split, grad_accumulation_steps=1):
     if split == Split.TRAIN and grad_accumulation_steps > 1:
         optimizer.step()  # Ensure any remaining gradients are applied
         optimizer.zero_grad()
+        steps += 1
 
-    return total_loss / n
+    # TODO return dict
+    return total_loss / n, steps
 
 
-
-def main():
+def main(args):
     # constants
     torch.manual_seed(args.seed)
     vocab_size = 256 + 1
@@ -80,18 +84,21 @@ def main():
     model = MambaLMHeadModel(args.d_model, args.n_layer, vocab_size).cuda()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    
+    total_steps = 0
 
     # model training
     for epoch in range(args.num_epochs):
-        train_loss = loop(
+        train_loss, train_steps = loop(
             train_loader,
             optimizer,
             model,
             Split.TRAIN,
             grad_accumulation_steps=args.grad_accumulation_steps,
         )
+        total_steps += train_steps
         with torch.no_grad():
-            valid_loss = loop(
+            valid_loss, _ = loop(
                 valid_loader,
                 optimizer,
                 model,
@@ -118,7 +125,7 @@ def main():
 
     # model test
     with torch.no_grad():
-        test_loss = loop(test_loader, optimizer, model, Split.TEST)
+        test_loss, _ = loop(test_loader, optimizer, model, Split.TEST)
     wandb.log({
         "test-loss": test_loss,
         "test-bpd": test_loss / math.log2(math.exp(1)),
