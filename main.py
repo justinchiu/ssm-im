@@ -104,25 +104,25 @@ def main():
 
     # model training
     for epoch in range(num_epochs):
-            train_loss = loop(train_loader, optimizer, model, Split.TRAIN, grad_accumulation_steps) # 
-            with torch.no_grad():
-                valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
-            
-            wandb.log({
-                "train-loss": train_loss,
-                "valid-loss": valid_loss,
-            })
+        train_loss = loop(train_loader, optimizer, model, Split.TRAIN, grad_accumulation_steps=4) # Example accumulation step
+        with torch.no_grad():
+            valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
+        
+        wandb.log({
+            "train-loss": train_loss,
+            "valid-loss": valid_loss,
+        })
 
-            if total_steps % save_model_steps == 0:
-                # Save checkpoint
-                checkpoint = {
-                    'epoch': epoch,
-                    'step': total_steps,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': train_loss,
-                }
-                torch.save(checkpoint, f'checkpoint_epoch_{epoch}_step_{total_steps}.pth')
+        if total_steps % save_model_steps == 0:
+            # Save checkpoint
+            checkpoint = {
+                'epoch': epoch,
+                'step': total_steps,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': train_loss,
+            }
+            torch.save(checkpoint, f'checkpoint_epoch_{epoch}_step_{total_steps}.pth')
 
     # model test
     with torch.no_grad():
