@@ -1,3 +1,4 @@
+import os
 from enum import Enum, auto
 import math
 import tqdm
@@ -113,6 +114,7 @@ def main(args):
                 "valid-loss": valid_loss,
             }
             model_name = "".join(f"{k[:2]}{v}" for k,v in vars(args).items())
+            os.makedirs(f"checkpoints/{model_name}", exist_ok=True)
             torch.save(checkpoint, f"checkpoints/{model_name}/checkpoint_epoch_{epoch}.pth")
 
     # model test
