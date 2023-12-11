@@ -63,20 +63,21 @@ def load_cifar():
         d_output=d_output,
     )
 
+
 def dataloaders(data, batch_size, num_workers, device="cuda:0"):
     def collate_fn(batch):
-        stacked_images = torch.stack(
-            [img for img, label in batch]
-        )
+        stacked_images = torch.stack([img for img, label in batch])
         batch, length = stacked_images.shape
-        return torch.concatenate([
-            torch.full((batch, 1), 256),
-            stacked_images,
-        ], dim=1)
-
-        return torch.utils.data.default_collate(
+        return torch.concatenate(
+            [
+                torch.full((batch, 1), 256),
+                stacked_images,
+            ],
+            dim=1,
         )
-    
+
+        return torch.utils.data.default_collate()
+
     # Dataloaders
     trainloader = torch.utils.data.DataLoader(
         data.train,
@@ -106,5 +107,3 @@ def dataloaders(data, batch_size, num_workers, device="cuda:0"):
         collate_fn=collate_fn,
     )
     return trainloader, valloader, testloader
-
-
