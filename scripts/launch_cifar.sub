@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH -J ssm-cifar                          # Job name
+#SBATCH -o slurm/ssm-cifar_%j.out                  # output file (%j expands to jobID)
+#SBATCH -e slurm/ssm-cifar_%j.err                  # error log file (%j expands to jobID)
+#SBATCH --mail-type=ALL                      # Request status by email 
+#SBATCH --mail-user=jtc257@cornell.edu        # Email address to send results to.
+#SBATCH -N 1                                 # Total number of nodes requested
+#SBATCH -n 1                                 # Total number of cores requested
+#SBATCH --get-user-env                       # retrieve the users login environment
+#SBATCH --mem=32G                           # server memory requested (per node)
+#SBATCH -t 48:00:00                           # Time limit (hh:mm:ss)
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:1
+#SBATCH --partition=rush       # Request partition
+
+cd /home/jtc257/python/ssm-im
+conda deactivate
+conda activate mamba
+python main.py \
+    --num-epochs 50 \
+    --batch-size 64 \
+    --grad-accumulation-steps 2 \
+    --n-layer 8 \
+    --d-model 256 \
+    --lr 1e-3 \
+    --seed 1234
