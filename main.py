@@ -38,14 +38,14 @@ def evaluate(dataloader, model):
     return total_loss / n
 
 
-def train(dataloader, optimizer, model, grad_accumulation_steps=1):
+def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1):
     total_loss = 0
+    total_step = 0
     n = 0
     batch_loss = 0
     batch_n = 0
-    steps = 0
     optimizer.zero_grad()
-    for images in tqdm.tqdm(dataloader):
+    for step, images in enumerate(tqdm.tqdm(dataloader)):
         x = images.cuda()
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
@@ -67,10 +67,10 @@ def train(dataloader, optimizer, model, grad_accumulation_steps=1):
         # update weights
         # average over total number of pixels*channels in batch
         (loss / num_tokens).backward()
-        if (steps + 1) % grad_accumulation_steps == 0:
+        if (step + 1) % grad_accumulation_steps == 0:
             wandb.log(
                 {
-                    "train_step": steps + 1,
+                    "train_step": start_step + total_step,
                     "train/batch-loss": batch_loss / batch_n,
                     "train/batch-bpd": batch_loss / batch_n / math.log2(math.exp(1)),
                 }
@@ -79,15 +79,14 @@ def train(dataloader, optimizer, model, grad_accumulation_steps=1):
             optimizer.zero_grad()
             batch_n = 0
             batch_loss = 0
-            steps += 1
+            total_step += 1
 
-    if (grad_accumulation_steps > 1) and (steps % grad_accumulation_steps != 0):
+    if (grad_accumulation_steps > 1) and (step % grad_accumulation_steps != 0):
         optimizer.step()  # Ensure any remaining gradients are applied
         optimizer.zero_grad()
-        steps += 1
+        total_step += 1
 
-    # TODO return dict
-    return total_loss / n, steps
+    return total_loss / n, total_step
 
 
 def main(args):
@@ -102,11 +101,9 @@ def main(args):
         config=args,
     )
 
-    # wandb can log only per step by default, define custom step
+    # wandb can log only once per step by default, define custom step
     wandb.define_metric("train_step")
-    wandb.define_metric("train/*", step_metric="train_step")
-    wandb.define_metric("val/*", step_metric="train_step")
-    wandb.define_metric("test/*", step_metric="train_step")
+    wandb.define_metric("*", step_metric="train_step")
 
     data = load_cifar()
 
@@ -117,7 +114,7 @@ def main(args):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    total_steps = 0
+    total_step = 0
     best_valid_loss = 1e10
 
     for epoch in range(args.num_epochs):
@@ -128,13 +125,14 @@ def main(args):
             dataloader=train_loader,
             optimizer=optimizer,
             model=model,
+            start_step=total_step,
             grad_accumulation_steps=args.grad_accumulation_steps,
         )
-        total_steps += train_steps
+        total_step += train_steps
         wandb.log(
             {
                 "epoch": epoch,
-                "train_step": total_steps,
+                "train_step": total_step,
                 "train/loss": train_loss,
                 "train/bpd": train_loss / math.log2(math.exp(1)),
             }
@@ -149,8 +147,7 @@ def main(args):
             )
         wandb.log(
             {
-                "epoch": epoch,
-                "train_step": total_steps,
+                "train_step": total_step,
                 "val/loss": valid_loss,
                 "val/bpd": valid_loss / math.log2(math.exp(1)),
             }
@@ -179,8 +176,7 @@ def main(args):
         test_loss = evaluate(test_loader, model)
     wandb.log(
         {
-            "epoch": epoch,
-            "train_step": total_steps,
+            "train_step": total_step,
             "test/loss": test_loss,
             "test/bpd": test_loss / math.log2(math.exp(1)),
         }
