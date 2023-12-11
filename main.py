@@ -112,16 +112,6 @@ def main(args):
             "train-bpd": train_loss / math.log2(math.exp(1)),
             "valid-bpd": valid_loss / math.log2(math.exp(1)),
         })
-            valid_loss = loop(valid_loader, optimizer, model, Split.VALID)
-
-        wandb.log(
-            {
-                "train-loss": train_loss,
-                "valid-loss": valid_loss,
-                "train-bpd": train_loss / math.log2(math.exp(1)),
-                "valid-bpd": valid_loss / math.log2(math.exp(1)),
-            }
-        )
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
