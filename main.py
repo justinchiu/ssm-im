@@ -36,7 +36,7 @@ def evaluate(dataloader, model, num_samples):
     return total_loss / n, samples
 
 
-def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1):
+def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1, train_steps=-1):
     total_loss = 0
     total_step = 0
     n = 0
@@ -44,6 +44,8 @@ def train(dataloader, optimizer, model, start_step, grad_accumulation_steps=1):
     batch_n = 0
     optimizer.zero_grad()
     for step, images in enumerate(tqdm.tqdm(dataloader)):
+        if train_steps > 0 and step > train_steps:
+            break
         x = images.cuda()
         output = model(x[:, :-1])
         logprobs = output.logits.log_softmax(-1)
@@ -121,6 +123,7 @@ def main(args):
             model=model,
             start_step=total_step,
             grad_accumulation_steps=args.grad_accumulation_steps,
+            train_steps=args.train_steps,
         )
         total_step += train_steps
         wandb.log(
@@ -209,6 +212,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num-samples", type=int, default=16, help="Number of samples at eval (default: 16)"
+    )
+    parser.add_argument(
+        "--train-steps",
+        type=int,
+        default=-1,
+        help="Number of batches to run in training. Debugging only. (default: -1)",
     )
     parser.add_argument(
         "--grad-accumulation-steps",

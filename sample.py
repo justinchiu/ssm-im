@@ -3,6 +3,8 @@ import torch
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.utils.generation import decode
 import einops
+import torchvision
+import wandb
 
 @torch.inference_mode()
 def naive_sample(model, num_samples):
@@ -13,16 +15,15 @@ def naive_sample(model, num_samples):
         "b (h w c) -> b c h w", h = 32, w = 32, c = 3,
     ).float() / 255
 
+
 def sample_wandb_grid(model, num_samples):
+    samples = naive_sample(model, num_samples)
     image_grid = torchvision.utils.make_grid(samples)
     images = wandb.Image(image_grid)
     return images
 
 
-
 if __name__ == "__main__":
-    import wandb
-    import torchvision
     start = time.time()
 
     # load model
