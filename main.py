@@ -1,15 +1,11 @@
 import os
 import math
-from enum import Enum, auto
-import math
 import tqdm
 import torch
-from torchvision.transforms import ToTensor
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import argparse
 import wandb
 
-import pdb
 from data import load_cifar, dataloaders
 import sample
 

@@ -3,8 +3,6 @@ import einops
 import einops.layers.torch
 import torch
 import torchvision
-from torch.utils.data.dataloader import DataLoader
-from torch.utils.data import random_split
 
 
 @dataclass
