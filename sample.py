@@ -7,28 +7,6 @@ import torchvision
 import wandb
 
 
-@torch.inference_mode()
-def naive_sample(model, num_samples):
-    x = torch.full((num_samples, 1), 256, dtype=torch.long, device="cuda:0")
-    output = decode(x, model, 32 * 32 * 3 + 1, top_k=0)
-    return (
-        einops.rearrange(
-            output.sequences[:, 1:],
-            "b (h w c) -> b c h w",
-            h=32,
-            w=32,
-            c=3,
-        ).float()
-        / 255
-    )
-
-
-def sample_wandb_grid(model, num_samples):
-    samples = naive_sample(model, num_samples)
-    image_grid = torchvision.utils.make_grid(samples)
-    images = wandb.Image(image_grid)
-    return images
-
 
 if __name__ == "__main__":
     start = time.time()

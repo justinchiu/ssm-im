@@ -29,6 +29,7 @@ tyro = "*"
 einops = "*"
 
 wandb = "*"
+lightning = "*"
 
 [build-system]
 requires = ["poetry-core"]
