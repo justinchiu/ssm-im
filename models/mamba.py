@@ -15,9 +15,11 @@ class MambaLm(L.LightningModule):
         self.save_hyperparameters()
         self.args = args
         self.model = MambaLMHeadModel(args.d_model, args.n_layer, VOCAB_SIZE)
-        self.train_steps = 0 # what if restarting?
 
         # logging metrics
+        self.train_steps = 0 # what if restarting?
+        self.epoch = 0
+
         self.train_loss = 0
         self.train_n = 0
         self.valid_loss = 0
@@ -63,10 +65,12 @@ class MambaLm(L.LightningModule):
             {
                 "train_step": self.train_steps,
                 "train/bpd": self.train_loss / self.train_n,
+                "epoch": self.epoch,
             }
         )
         self.train_loss = 0
         self.train_n = 0
+        self.epoch += 1
 
 
     def validation_step(self, batch, batch_idx):

@@ -38,16 +38,26 @@ def main(args):
     )
     model = MambaLm(args).to(device)
 
+    val_chp = ModelCheckpoint(
+        save_top_k=2,
+        mode="min",
+        monitor="valid_bpd",
+        dirpath=checkpoint_path,
+        filename="cifar-{epoch:02d}-{val_bpd:.2f}",
+    )
     trainer = L.Trainer(
         default_root_dir=checkpoint_path,
         accelerator="gpu" if str(device).startswith("cuda") else "cpu",
         devices=1,
         max_epochs=args.num_epochs,
         max_steps=args.train_steps,
+        accumulate_grad_batches=args.grad_accumulation_steps,
+        gradient_clip_val=args.grad_clip_val,
         callbacks=[
-            ModelCheckpoint(save_weights_only=True, mode="min", monitor="valid_bpd"),
-            LearningRateMonitor("epoch")
+            val_chp,
+            LearningRateMonitor("epoch"),
         ],
+        num_sanity_val_steps=5,
     )
 
     trainer.fit(model, train_loader, valid_loader)
@@ -103,6 +113,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Gradient accumulation steps (default: 2)",
+    )
+    parser.add_argument(
+        "--grad-clip-val",
+        type=float,
+        default=5.,
+        help="Gradient accumulation steps (default: 5)",
     )
     parser.add_argument(
         "--save-model-steps",
