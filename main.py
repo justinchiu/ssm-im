@@ -51,7 +51,7 @@ def main(args):
     )
 
     trainer.fit(model, train_loader, valid_loader)
-    valid_result = trainer.test(model, valid_loader, verbose=False)
+    valid_result = trainer.validate(model, valid_loader, verbose=False)
     test_result = trainer.test(model, test_loader, verbose=False)
 
 if __name__ == "__main__":
