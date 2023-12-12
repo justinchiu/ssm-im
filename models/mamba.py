@@ -84,7 +84,7 @@ class MambaLm(L.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_bpd",
+                "monitor": "valid_bpd",
             }
         }
 
