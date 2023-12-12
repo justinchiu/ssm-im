@@ -28,6 +28,8 @@ def main(args):
     )
 
     data = load_cifar()
+    # set vocab size for mamba based on dataset
+    args.vocab_size = data.d_output
 
     train_loader, valid_loader, test_loader = dataloaders(
         data, args.batch_size, args.num_workers

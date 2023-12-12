@@ -7,7 +7,7 @@ import torchvision
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.utils.generation import decode
-from constants import LOG2, VOCAB_SIZE
+from constants import LOG2
 
 
 class MambaLm(L.LightningModule):
@@ -15,7 +15,8 @@ class MambaLm(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.args = args
-        self.model = MambaLMHeadModel(args.d_model, args.n_layer, VOCAB_SIZE)
+        self.vocab_size = args.vocab_size
+        self.model = MambaLMHeadModel(args.d_model, args.n_layer, args.vocab_size)
 
         # logging metrics
         self.train_loss = 0
@@ -33,7 +34,7 @@ class MambaLm(L.LightningModule):
         labels = batch[:, 1:]
         output = self.model(inputs)
         nll = F.cross_entropy(
-            output.logits.view(-1, VOCAB_SIZE),
+            output.logits.view(-1, self.vocab_size),
             labels.reshape(-1),
             reduction="none",
         )

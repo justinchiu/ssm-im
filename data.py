@@ -51,7 +51,7 @@ def load_cifar():
     )
 
     d_input = 3
-    d_output = 10
+    d_output = 256+1
 
     return Data(
         train=trainset,
