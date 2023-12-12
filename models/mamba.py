@@ -17,6 +17,14 @@ class MambaLm(L.LightningModule):
         self.model = MambaLMHeadModel(args.d_model, args.n_layer, VOCAB_SIZE)
         self.train_steps = 0 # what if restarting?
 
+        # logging metrics
+        self.train_loss = 0
+        self.train_n = 0
+        self.valid_loss = 0
+        self.valid_n = 0
+        self.test_loss = 0
+        self.test_n = 0
+
     def forward(self, x):
         return self.model(x)
 
@@ -32,46 +40,69 @@ class MambaLm(L.LightningModule):
         return nll
 
     def bpd(self, batch):
-        return self.nll(batch).mean() / LOG2
+        return self.nll(batch) / LOG2
 
     # loop functions
     def training_step(self, batch, batch_idx):
-        loss = self.bpd(batch)
-        self.log("train_bpd", loss)
+        bpd = self.bpd(batch)
+        loss = bpd.mean()
         wandb.log(
             {
                 "train_step": self.train_steps,
-                "train/bpd": loss,
+                "train/batch-bpd": loss,
             }
         )
         self.train_steps += 1
+
+        self.train_loss += bpd.sum()
+        self.train_n += bpd.shape[0]
         return loss
+
+    def on_train_epoch_end(self):
+        wandb.log(
+            {
+                "train_step": self.train_steps,
+                "train/bpd": self.train_loss / self.train_n,
+            }
+        )
+        self.train_loss = 0
+        self.train_n = 0
+
 
     def validation_step(self, batch, batch_idx):
-        loss = self.bpd(batch)
-        self.log("valid_bpd", loss)
+        bpd = self.bpd(batch)
+        self.valid_loss += bpd.sum()
+        self.valid_n += bpd.shape[0]
+
+    def on_validation_epoch_end(self):
         samples = self.sample_wandb_grid(16)
         wandb.log(
             {
                 "train_step": self.train_steps,
-                "val/bpd": loss,
+                "valid/bpd": self.valid_loss / self.valid_n,
                 "samples": samples,
             }
         )
-        return loss
+        self.log("valid_bpd", self.valid_loss / self.valid_n)
+        self.valid_loss = 0
+        self.valid_n = 0
 
     def test_step(self, batch, batch_idx):
-        loss = self.bpd(batch)
-        self.log("test_bpd", loss)
+        bpd = self.bpd(batch)
+        self.test_loss += bpd.sum()
+        self.test_n += bpd.shape[0]
+
+    def on_test_epoch_end(self):
         samples = self.sample_wandb_grid(16)
         wandb.log(
             {
                 "train_step": self.train_steps,
-                "test/bpd": loss,
+                "test/bpd": self.test_loss / self.test_n,
                 "samples": samples,
             }
         )
-        return loss
+        self.test_loss = 0
+        self.test_n = 0
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.args.lr)
