@@ -64,6 +64,7 @@ def main(args):
     valid_result = trainer.validate(model, valid_loader, verbose=False)
     test_result = trainer.test(model, test_loader, verbose=False)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model on CIFAR with SSM")
     parser.add_argument(
@@ -94,7 +95,10 @@ if __name__ == "__main__":
         "--patience", type=int, default=4, help="Number of plateau epochs (default: 4)"
     )
     parser.add_argument(
-        "--factor", type=float, default=0.5, help="Decay factor after plateau (default: 0.5)"
+        "--factor",
+        type=float,
+        default=0.5,
+        help="Decay factor after plateau (default: 0.5)",
     )
     parser.add_argument(
         "--num-samples",
@@ -117,7 +121,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grad-clip-val",
         type=float,
-        default=5.,
+        default=5.0,
         help="Gradient accumulation steps (default: 5)",
     )
     parser.add_argument(

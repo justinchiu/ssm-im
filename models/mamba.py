@@ -9,6 +9,7 @@ from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.utils.generation import decode
 from constants import LOG2, VOCAB_SIZE
 
+
 class MambaLm(L.LightningModule):
     def __init__(self, args):
         super().__init__()
@@ -17,7 +18,7 @@ class MambaLm(L.LightningModule):
         self.model = MambaLMHeadModel(args.d_model, args.n_layer, VOCAB_SIZE)
 
         # logging metrics
-        self.train_steps = 0 # what if restarting?
+        self.train_steps = 0  # what if restarting?
         self.epoch = 0
 
         self.train_loss = 0
@@ -72,7 +73,6 @@ class MambaLm(L.LightningModule):
         self.train_n = 0
         self.epoch += 1
 
-
     def validation_step(self, batch, batch_idx):
         bpd = self.bpd(batch)
         self.valid_loss += bpd.sum()
@@ -120,7 +120,7 @@ class MambaLm(L.LightningModule):
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "monitor": "valid_bpd",
-            }
+            },
         }
 
     # sampling helper functions
