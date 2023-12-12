@@ -15,40 +15,37 @@ from models.mamba import MambaLm
 
 def main(args):
     L.seed_everything(args.seed)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model_name = "".join(f"{k[:2]}{v}" for k, v in vars(args).items())
     checkpoint_path = f"checkpoints/{model_name}"
     os.makedirs(checkpoint_path, exist_ok=True)
 
-    wandb.init(
+
+    wandb_logger = L.pytorch.loggers.WandbLogger(
         project="ssm-cifar-tokenized",
         notes="testing out ssms on tokenized cifar",
         tags=["ssm", "cifar"],
         config=args,
     )
 
-    # wandb can log only once per step by default, define custom step
-    wandb.define_metric("train_step")
-    wandb.define_metric("*", step_metric="train_step")
-
     data = load_cifar()
 
     train_loader, valid_loader, test_loader = dataloaders(
         data, args.batch_size, args.num_workers
     )
-    model = MambaLm(args).to(device)
+    model = MambaLm(args)
 
     val_chp = ModelCheckpoint(
         save_top_k=2,
         mode="min",
-        monitor="valid_bpd",
+        monitor="valid/bpd",
         dirpath=checkpoint_path,
         filename="cifar-{epoch:02d}-{val_bpd:.2f}",
     )
     trainer = L.Trainer(
         default_root_dir=checkpoint_path,
-        accelerator="gpu" if str(device).startswith("cuda") else "cpu",
-        devices=1,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=torch.cuda.device_count(),
+        strategy="ddp",
         max_epochs=args.num_epochs,
         max_steps=args.train_steps,
         accumulate_grad_batches=args.grad_accumulation_steps,
@@ -58,6 +55,7 @@ def main(args):
             LearningRateMonitor("epoch"),
         ],
         num_sanity_val_steps=5,
+        logger = wandb_logger,
     )
 
     trainer.fit(model, train_loader, valid_loader)
