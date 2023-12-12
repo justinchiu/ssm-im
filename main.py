@@ -61,7 +61,8 @@ def main(args):
     )
 
     trainer.fit(model, train_loader, valid_loader)
-    valid_result = trainer.validate(model, valid_loader, verbose=False)
+    # don't need to rerun validation
+    #valid_result = trainer.validate(model, valid_loader, verbose=False)
     test_result = trainer.test(model, test_loader, verbose=False)
 
 
