@@ -6,7 +6,9 @@ install with `poetry lock && poetry install` or use conda and install things by 
 mostly just the standard torch stuff + wandb.
 
 ## run
-`python main.py --batch-size 64 --num-workers 4 --d-model 256 --n-layer 8 --lr 0.001 --num-epochs 50 --grad-accumulation-steps 1 --save-model-steps 500`
+Current best:
+`python main.py --batch-size 64 --lr 1e-3 --n-layer 16 --d-model 512`
+Likely: setting --clip-grad-val 1 will work better.
 
 ## experiments
 logged in [wandb](https://wandb.ai/chiu-justin-t/ssm-cifar-tokenized).
