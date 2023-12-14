@@ -2,210 +2,68 @@ import os
 import math
 import tqdm
 import torch
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 import argparse
 import wandb
 import transformers
 
+import lightning as L
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+
 from data import load_cifar, dataloaders
-import sample
-
-
-def evaluate(dataloader, model, num_samples):
-    total_loss = 0
-    n = 0
-
-    for step, images in enumerate(tqdm.tqdm(dataloader)):
-        x = images.cuda()
-        output = model(x[:, :-1])
-        logprobs = output.logits.log_softmax(-1)
-        batch_size, length, vocab = logprobs.shape
-        loglik = logprobs.gather(-1, x[:, 1:, None])
-        loss = -loglik.sum()
-
-        # loss accounting
-        num_tokens = batch_size * length
-        n += num_tokens
-        total_loss += loss.detach()
-
-    # TODO evaluate generated images
-    samples = sample.sample_wandb_grid(model, num_samples)
-    return total_loss / n, samples
-
-
-def train(
-    dataloader,
-    optimizer,
-    scheduler,
-    model,
-    start_step,
-    grad_accumulation_steps=1,
-    train_steps=-1,
-):
-    total_loss = 0
-    total_step = 0
-    n = 0
-    batch_loss = 0
-    batch_n = 0
-    optimizer.zero_grad()
-    for step, images in enumerate(tqdm.tqdm(dataloader)):
-        if train_steps > 0 and step > train_steps:
-            break
-        x = images.cuda()
-        output = model(x[:, :-1])
-        logprobs = output.logits.log_softmax(-1)
-        batch_size, length, vocab = logprobs.shape
-        loglik = logprobs.gather(-1, x[:, 1:, None])
-        loss = -loglik.sum()
-
-        # loss accounting
-        num_tokens = batch_size * length
-        batch_n += num_tokens
-        batch_loss += loss.detach()
-        n += num_tokens
-        total_loss += loss.detach()
-
-        # update weights
-        # average over total number of pixels*channels in batch
-        (loss / num_tokens).backward()
-        if (step + 1) % grad_accumulation_steps == 0:
-            wandb.log(
-                {
-                    "train_step": start_step + total_step,
-                    "train/batch-loss": batch_loss / batch_n,
-                    "train/batch-bpd": batch_loss / batch_n / math.log(2),
-                }
-            )
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
-            batch_n = 0
-            batch_loss = 0
-            total_step += 1
-
-    if (grad_accumulation_steps > 1) and (step % grad_accumulation_steps != 0):
-        optimizer.step()  # Ensure any remaining gradients are applied
-        scheduler.step()
-        optimizer.zero_grad()
-        total_step += 1
-
-    return total_loss / n, total_step
+from models.mamba import MambaLm
 
 
 def main(args):
-    # constants
-    torch.manual_seed(args.seed)
-    vocab_size = 256 + 1
+    L.seed_everything(args.seed)
+    model_name = "".join(f"{k[:2]}{v}" for k, v in vars(args).items())
+    checkpoint_path = f"checkpoints/{model_name}"
+    os.makedirs(checkpoint_path, exist_ok=True)
 
-    wandb.init(
+
+    wandb_logger = L.pytorch.loggers.WandbLogger(
         project="ssm-cifar-tokenized",
         notes="testing out ssms on tokenized cifar",
         tags=["ssm", "cifar"],
         config=args,
     )
 
-    # wandb can log only once per step by default, define custom step
-    wandb.define_metric("train_step")
-    wandb.define_metric("*", step_metric="train_step")
-
     data = load_cifar()
+    # set vocab size for mamba based on dataset
+    args.vocab_size = data.d_output
 
     train_loader, valid_loader, test_loader = dataloaders(
         data, args.batch_size, args.num_workers
     )
-    model = MambaLMHeadModel(args.d_model, args.n_layer, vocab_size).cuda()
+    model = MambaLm(args)
 
-    # optimizer hyperparams from
-    # https://github.com/state-spaces/s4/blob/main/configs/experiment/cifar/s4-cifar.yaml
-    # https://github.com/state-spaces/s4/blob/main/configs/optimizer/adamw.yaml
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=0.05,
+    val_chp = ModelCheckpoint(
+        save_top_k=2,
+        mode="min",
+        monitor="valid/bpd",
+        dirpath=checkpoint_path,
+        filename="cifar-{epoch:02d}-{val_bpd:.2f}",
     )
-    scheduler = transformers.get_cosine_schedule_with_warmup(
-        optimizer,
-        # len(training_loader)
-        num_warmup_steps=len(train_loader),
-        # len(training_loader) * args.num_epochs
-        num_training_steps=len(train_loader)*args.num_epochs,
+    trainer = L.Trainer(
+        default_root_dir=checkpoint_path,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=torch.cuda.device_count(),
+        strategy="ddp",
+        max_epochs=args.num_epochs,
+        max_steps=args.train_steps,
+        accumulate_grad_batches=args.grad_accumulation_steps,
+        gradient_clip_val=args.grad_clip_val,
+        callbacks=[
+            val_chp,
+            LearningRateMonitor("epoch"),
+        ],
+        num_sanity_val_steps=5,
+        logger = wandb_logger,
     )
 
-    total_step = 0
-    best_valid_loss = 1e10
-
-    for epoch in range(args.num_epochs):
-        print(f"Epoch {epoch}")
-        # train
-        model.train()
-        train_loss, train_steps = train(
-            dataloader=train_loader,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            model=model,
-            start_step=total_step,
-            grad_accumulation_steps=args.grad_accumulation_steps,
-            train_steps=args.train_steps,
-        )
-        total_step += train_steps
-        wandb.log(
-            {
-                "epoch": epoch,
-                "train_step": total_step,
-                "train/loss": train_loss,
-                "train/bpd": train_loss / math.log(2),
-            }
-        )
-
-        # validate
-        model.eval()
-        with torch.no_grad():
-            valid_loss, valid_samples = evaluate(
-                valid_loader,
-                model,
-                num_samples=args.num_samples,
-            )
-        wandb.log(
-            {
-                "train_step": total_step,
-                "val/loss": valid_loss,
-                "val/bpd": valid_loss / math.log(2),
-                "samples": valid_samples,
-            }
-        )
-
-        if valid_loss < best_valid_loss:
-            print(f"New best valid loss: {valid_loss}, saving model")
-            best_valid_loss = valid_loss
-            # Save checkpoint
-            checkpoint = {
-                "args": args,
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "train_loss": train_loss,
-                "valid_loss": valid_loss,
-            }
-            model_name = "".join(f"{k[:2]}{v}" for k, v in vars(args).items())
-            os.makedirs(f"checkpoints/{model_name}", exist_ok=True)
-            torch.save(
-                checkpoint, f"checkpoints/{model_name}/checkpoint_epoch_{epoch}.pth"
-            )
-
-    # test
-    model.eval()
-    with torch.no_grad():
-        test_loss, test_samples = evaluate(
-            test_loader, model, num_samples=args.num_samples
-        )
-    wandb.log(
-        {
-            "train_step": total_step,
-            "test/loss": test_loss,
-            "test/bpd": test_loss / math.log2(math.exp(1)),
-            "samples": test_samples,
-        }
-    )
+    trainer.fit(model, train_loader, valid_loader)
+    # don't need to rerun validation
+    #valid_result = trainer.validate(model, valid_loader, verbose=False)
+    test_result = trainer.test(model, test_loader, verbose=False)
 
 
 if __name__ == "__main__":
@@ -235,6 +93,15 @@ if __name__ == "__main__":
         "--num-epochs", type=int, default=200, help="Number of epochs (default: 200)"
     )
     parser.add_argument(
+        "--patience", type=int, default=4, help="Number of plateau epochs (default: 4)"
+    )
+    parser.add_argument(
+        "--factor",
+        type=float,
+        default=0.5,
+        help="Decay factor after plateau (default: 0.5)",
+    )
+    parser.add_argument(
         "--num-samples",
         type=int,
         default=16,
@@ -251,6 +118,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Gradient accumulation steps (default: 2)",
+    )
+    parser.add_argument(
+        "--grad-clip-val",
+        type=float,
+        default=5.0,
+        help="Gradient accumulation steps (default: 5)",
     )
     parser.add_argument(
         "--save-model-steps",

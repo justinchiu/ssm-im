@@ -51,7 +51,7 @@ def load_cifar():
     )
 
     d_input = 3
-    d_output = 10
+    d_output = 256+1
 
     return Data(
         train=trainset,
@@ -62,7 +62,7 @@ def load_cifar():
     )
 
 
-def dataloaders(data, batch_size, num_workers, device="cuda:0"):
+def dataloaders(data, batch_size, num_workers):
     def collate_fn(batch):
         stacked_images = torch.stack([img for img, label in batch])
         batch, length = stacked_images.shape
@@ -83,7 +83,6 @@ def dataloaders(data, batch_size, num_workers, device="cuda:0"):
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
-        pin_memory_device=device,
         collate_fn=collate_fn,
     )
     valloader = torch.utils.data.DataLoader(
@@ -92,7 +91,6 @@ def dataloaders(data, batch_size, num_workers, device="cuda:0"):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
-        pin_memory_device=device,
         collate_fn=collate_fn,
     )
     testloader = torch.utils.data.DataLoader(
@@ -101,7 +99,6 @@ def dataloaders(data, batch_size, num_workers, device="cuda:0"):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
-        pin_memory_device=device,
         collate_fn=collate_fn,
     )
     return trainloader, valloader, testloader
