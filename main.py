@@ -10,7 +10,7 @@ import lightning as L
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from data import load_cifar, dataloaders
-from models.mamba import MambaLm
+from models.mamba import get_model
 
 
 def main(args):
@@ -34,7 +34,7 @@ def main(args):
     train_loader, valid_loader, test_loader = dataloaders(
         data, args.batch_size, args.num_workers
     )
-    model = MambaLm(args)
+    model = get_model(args)
 
     val_chp = ModelCheckpoint(
         save_top_k=2,
@@ -69,6 +69,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a model on CIFAR with SSM")
     parser.add_argument(
+        "--model",
+        choices=["MambaSubPixelLm", "MambaPixelLm"],
+        default="MambaSubPixelLm",
+        help="AR Model (default: MambaSubPixelLm)",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=50,
@@ -84,10 +90,10 @@ if __name__ == "__main__":
         "--d-model", type=int, default=512, help="Dimension of model (default: 512)"
     )
     parser.add_argument(
-        "--n-layer", type=int, default=6, help="Number of layers (default: 6)"
+        "--n-layer", type=int, default=16, help="Number of layers (default: 16)"
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-2, help="Learning rate (default: 1e-2)"
+        "--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)"
     )
     parser.add_argument(
         "--num-epochs", type=int, default=200, help="Number of epochs (default: 200)"
@@ -122,8 +128,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grad-clip-val",
         type=float,
-        default=5.0,
-        help="Gradient accumulation steps (default: 5)",
+        default=1.0,
+        help="Gradient accumulation steps (default: 1)",
     )
     parser.add_argument(
         "--save-model-steps",
