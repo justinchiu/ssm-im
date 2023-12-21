@@ -7,8 +7,9 @@ import torchvision
 
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 from mamba_ssm.utils.generation import decode
-from constants import LOG2
-from models.base import BaseLm
+
+from ssmim.constants import LOG2
+from ssmim.models.base import BaseLm
 
 def get_model(args):
     if args.model == "MambaSubPixelLm":

@@ -9,8 +9,8 @@ import transformers
 import lightning as L
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from data import load_cifar, dataloaders
-from models.mamba import get_model
+from ssmim.data import load_cifar, dataloaders
+from ssmim.models.mamba import get_model
 
 
 def main(args):
@@ -130,6 +130,12 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
         help="Gradient accumulation steps (default: 1)",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.2,
+        help="Gradient accumulation steps (default: 0.2)",
     )
     parser.add_argument(
         "--save-model-steps",

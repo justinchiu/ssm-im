@@ -7,8 +7,7 @@ mostly just the standard torch stuff + wandb.
 
 ## run
 Current best:
-`python main.py --batch-size 64 --lr 1e-3 --n-layer 16 --d-model 512`
-Likely: setting --clip-grad-val 1 will work better.
+`python main.py --batch-size 64 --lr 1e-3 --n-layer 16 --d-model 512 --clip-grad-val 1`
 
 ## experiments
 logged in [wandb](https://wandb.ai/chiu-justin-t/ssm-cifar-tokenized).
